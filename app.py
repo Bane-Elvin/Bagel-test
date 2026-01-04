@@ -89,12 +89,12 @@ same_device_modules = [
 ]
 
 if torch.cuda.device_count() == 1:
-    first_device = device_map.get(same_device_modules[0], "cuda:0")
+    first_device = device_map.get(same_device_modules[0], "cuda:1")
     for k in same_device_modules:
         if k in device_map:
             device_map[k] = first_device
         else:
-            device_map[k] = "cuda:0"
+            device_map[k] = "cuda:1"
 else:
     first_device = device_map.get(same_device_modules[0])
     for k in same_device_modules:
@@ -194,6 +194,21 @@ def text_to_image(prompt, show_thinking=False, cfg_text_scale=4.0, cfg_interval=
     # Call inferencer with or without think parameter based on user choice
     result = inferencer(text=prompt, think=show_thinking, **inference_hyper)
     return result["image"], result.get("text", None)
+
+
+# Text to Text function with thinking option and hyperparameters
+def text_to_text(prompt: str, show_thinking=False, do_sample=False, text_temperature=0.3, max_new_tokens=512):
+    if not prompt:
+        return ""
+
+    inference_hyper = dict(
+        do_sample=do_sample,
+        text_temperature=text_temperature,
+        max_think_token_n=max_new_tokens,
+    )
+
+    result = inferencer(text=prompt, think=show_thinking, understanding_output=True, **inference_hyper)
+    return result["text"]
 
 
 # Image Understanding function with thinking option and hyperparameters
@@ -358,6 +373,43 @@ with gr.Blocks() as demo:
                 max_think_token_n, do_sample, text_temperature, seed, image_ratio
             ],
             outputs=[img_output, thinking_output]
+        )
+
+    with gr.Tab("💬 Text to Text"):
+        with gr.Row():
+            with gr.Column(scale=1):
+                t2t_prompt = gr.Textbox(
+                    label="Prompt",
+                    value="Summarize the following paragraph in 3 bullet points:\n\nThe quick brown fox jumps over the lazy dog.",
+                    lines=6,
+                )
+            with gr.Column(scale=1):
+                t2t_output = gr.Textbox(label="Result", lines=20)
+
+        with gr.Row():
+            t2t_show_thinking = gr.Checkbox(label="Thinking", value=False)
+
+        with gr.Accordion("Inference Hyperparameters", open=False):
+            with gr.Row():
+                t2t_do_sample = gr.Checkbox(label="Sampling", value=False, info="Enable sampling for text generation")
+                t2t_text_temperature = gr.Slider(minimum=0.0, maximum=1.0, value=0.3, step=0.05, interactive=True,
+                                                 label="Temperature", info="Controls randomness in text generation (0=deterministic, 1=creative)")
+                t2t_max_new_tokens = gr.Slider(minimum=64, maximum=4096, value=512, step=64, interactive=True,
+                                               label="Max New Tokens", info="Maximum length of generated text, including potential thinking")
+
+        t2t_btn = gr.Button("Submit", variant="primary")
+
+        def process_text_to_text(prompt, show_thinking, do_sample, text_temperature, max_new_tokens):
+            return text_to_text(prompt, show_thinking, do_sample, text_temperature, max_new_tokens)
+
+        gr.on(
+            triggers=[t2t_btn.click, t2t_prompt.submit],
+            fn=process_text_to_text,
+            inputs=[
+                t2t_prompt, t2t_show_thinking, t2t_do_sample,
+                t2t_text_temperature, t2t_max_new_tokens
+            ],
+            outputs=t2t_output
         )
 
     with gr.Tab("🖌️ Image Edit"):
@@ -543,6 +595,7 @@ with gr.Blocks() as demo:
 
 UI_TRANSLATIONS = {
     "📝 Text to Image":"📝 文生图",
+    "💬 Text to Text":"💬 文生文",
     "Prompt":"提示词",
     "Thinking":"思考模式",
     "Inference Hyperparameters":"推理参数",
